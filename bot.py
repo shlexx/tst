@@ -77,7 +77,7 @@ def build_r34_embed(post: dict, tags: str):
     if file_url.endswith((".mp4", ".webm")):
         return None, f"🎬 **[{tags}]** {file_url}"
     embed = discord.Embed(
-        title=f"🔞 Rule34 — {tags}",
+        title=f"r34 — {tags}",
         url=f"https://rule34.xxx/index.php?page=post&s=view&id={post['id']}",
         color=0xFF4444,
     )
@@ -93,7 +93,7 @@ def build_e621_embed(post: dict, tags: str):
         return None, f"🎬 **[{tags}]** {file_url}"
     score = (post.get("score") or {}).get("total", "N/A")
     embed = discord.Embed(
-        title=f"🐾 e621 — {tags}",
+        title=f"e621 — {tags}",
         url=f"https://e621.net/posts/{post['id']}",
         color=0x00549E,
     )
