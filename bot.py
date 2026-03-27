@@ -56,14 +56,14 @@ async def fetch_r34(tags: str, amount: int) -> list:
     encoded = "+".join(tags.strip().split())
     pid = random.randint(0, 19)
     url = (
-        f"https://api.rule34.xxx/index.php"
+        f"https://rule34.xxx/index.php"
         f"?page=dapi&s=post&q=index&json=1&limit=100&pid={pid}&tags={encoded}"
     )
     log.info(f"[r34] tags={tags!r} pid={pid} amount={amount}")
     log.info(f"[r34] url: {url}")
 
     async with aiohttp.ClientSession() as session:
-        async with session.get(url, headers={"User-Agent": "DiscordBot/1.0"}) as resp:
+        async with session.get(url, headers={"User-Agent": "Mozilla/5.0 (compatible; DiscordBot/1.0)", "Accept": "application/json"}) as resp:
             log.info(f"[r34] http {resp.status} content-type={resp.content_type}")
             raw = await resp.text()
 
@@ -84,12 +84,12 @@ async def fetch_r34(tags: str, amount: int) -> list:
     if not data:
         log.info("[r34] empty page, retrying pid=0")
         url0 = (
-            f"https://api.rule34.xxx/index.php"
+            f"https://rule34.xxx/index.php"
             f"?page=dapi&s=post&q=index&json=1&limit=100&pid=0&tags={encoded}"
         )
         log.info(f"[r34] fallback url: {url0}")
         async with aiohttp.ClientSession() as session:
-            async with session.get(url0, headers={"User-Agent": "DiscordBot/1.0"}) as resp:
+            async with session.get(url0, headers={"User-Agent": "Mozilla/5.0 (compatible; DiscordBot/1.0)", "Accept": "application/json"}) as resp:
                 log.info(f"[r34] fallback http {resp.status}")
                 raw = await resp.text()
         log.info(f"[r34] fallback raw (first 300): {raw[:300]}")
@@ -224,7 +224,7 @@ async def send_results(interaction, posts, builder_fn, tags):
 
 # ── Slash commands ────────────────────────────────────────────────────────────
 
-@bot.tree.command(name="r34", description="fetch random posts from r34")
+@bot.tree.command(name="r34", description="fetch random posts from rule34")
 @app_commands.describe(tags='space-separated tags, e.g. "catgirl anime"', amount="number of posts 1-10 (default: 1)")
 @app_commands.checks.cooldown(1, 3)
 async def r34(interaction: discord.Interaction, tags: str, amount: app_commands.Range[int, 1, 10] = 1):
