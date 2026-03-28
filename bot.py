@@ -64,7 +64,7 @@ BROWSER_HEADERS = {
     "Accept-Language": "en-US,en;q=0.5",
 }
 
-# ── nhentai page reader view ──────────────────────────────────────────────────
+# ── nhentai page reader ───────────────────────────────────────────────────────
 
 def build_page_embed(gallery: dict, page: int) -> discord.Embed:
     media_id = gallery["media_id"]
@@ -84,11 +84,13 @@ def build_page_embed(gallery: dict, page: int) -> discord.Embed:
 
 class ReaderView(View):
     def __init__(self, gallery: dict):
-        super().__init__(timeout=300)  # 5 min timeout
+        super().__init__(timeout=300)
         self.gallery = gallery
         self.page = 0
         self.total = len(gallery["pages"])
         self.update_buttons()
+        # set link button url
+        self.open_btn.url = f"https://nhentai.net/g/{gallery['id']}/"
 
     def update_buttons(self):
         self.prev_btn.disabled = self.page == 0
@@ -110,9 +112,9 @@ class ReaderView(View):
             embed=build_page_embed(self.gallery, self.page), view=self
         )
 
-    @discord.ui.button(label="🔗 open", style=discord.ButtonStyle.link, url="https://nhentai.net")
+    @discord.ui.button(label="🔗 open", style=discord.ButtonStyle.link)
     async def open_btn(self, interaction: discord.Interaction, button: Button):
-        pass  # link buttons handle themselves
+        pass
 
     async def on_timeout(self):
         for item in self.children:
@@ -130,7 +132,6 @@ async def fetch_gelbooru(tags: str, amount: int) -> list:
     )
     headers = {"User-Agent": "Mozilla/5.0 (compatible; DiscordBot/1.0)"}
     log.info(f"[gel] tags={tags!r} pid={pid} amount={amount}")
-    log.info(f"[gel] url: {url}")
     async with aiohttp.ClientSession() as session:
         async with session.get(url, headers=headers) as resp:
             log.info(f"[gel] http {resp.status}")
@@ -146,6 +147,7 @@ async def fetch_gelbooru(tags: str, amount: int) -> list:
         url0 = (
             f"https://gelbooru.com/index.php?page=dapi&s=post&q=index"
             f"&json=1&limit=100&pid=0&tags={encoded}"
+            f"&api_key={GEL_API_KEY}&user_id={GEL_USER_ID}"
         )
         async with aiohttp.ClientSession() as session:
             async with session.get(url0, headers=headers) as resp:
@@ -170,7 +172,6 @@ async def fetch_xbooru(tags: str, amount: int) -> list:
     )
     headers = {"User-Agent": "Mozilla/5.0 (compatible; DiscordBot/1.0)"}
     log.info(f"[xb] tags={tags!r} pid={pid} amount={amount}")
-    log.info(f"[xb] url: {url}")
     async with aiohttp.ClientSession() as session:
         async with session.get(url, headers=headers) as resp:
             log.info(f"[xb] http {resp.status}")
@@ -201,56 +202,100 @@ async def fetch_xbooru(tags: str, amount: int) -> list:
     return random.sample(posts, min(amount, len(posts)))
 
 
+async def fetch_realbooru(tags: str, amount: int) -> list:
+    encoded = "+".join(tags.strip().split())
+    pid = random.randint(0, 10)
+    url = f"https://realbooru.com/index.php?page=post&s=list&tags={encoded}&pid={pid * 42}"
+    log.info(f"[realb] scraping tags={tags!r} pid={pid} amount={amount}")
+    log.info(f"[realb] url: {url}")
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=BROWSER_HEADERS) as resp:
+            log.info(f"[realb] http {resp.status} content-type={resp.content_type}")
+            html = await resp.text()
+
+    log.info(f"[realb] html length: {len(html)} | first 300: {html[:300]}")
+
+    post_ids = list(dict.fromkeys(re.findall(r'page=post&amp;s=view&amp;id=(\d+)', html)))
+    log.info(f"[realb] found {len(post_ids)} post ids")
+
+    if not post_ids:
+        log.info("[realb] retrying pid=0")
+        url0 = f"https://realbooru.com/index.php?page=post&s=list&tags={encoded}&pid=0"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url0, headers=BROWSER_HEADERS) as resp:
+                log.info(f"[realb] fallback http {resp.status}")
+                html = await resp.text()
+        post_ids = list(dict.fromkeys(re.findall(r'page=post&amp;s=view&amp;id=(\d+)', html)))
+        log.info(f"[realb] fallback found {len(post_ids)} post ids")
+
+    if not post_ids:
+        log.warning("[realb] no post ids found")
+        return []
+
+    chosen = random.sample(post_ids, min(amount, len(post_ids)))
+    posts = []
+
+    async with aiohttp.ClientSession() as session:
+        for post_id in chosen:
+            post_url = f"https://realbooru.com/index.php?page=post&s=view&id={post_id}"
+            log.info(f"[realb] fetching post {post_id}")
+            async with session.get(post_url, headers=BROWSER_HEADERS) as resp:
+                log.info(f"[realb] post {post_id} http {resp.status}")
+                post_html = await resp.text()
+
+            img_match = re.search(r'id=["\']image["\'][^>]*src=["\']([^"\']+)["\']', post_html)
+            if not img_match:
+                img_match = re.search(r'src=["\']([^"\']+)["\'][^>]*id=["\']image["\']', post_html)
+            vid_match = re.search(r'<source[^>]+src=["\']([^"\']+\.(?:mp4|webm))["\']', post_html)
+
+            if vid_match:
+                file_url = vid_match.group(1)
+                log.info(f"[realb] post {post_id} video: {file_url}")
+                posts.append({"id": post_id, "file_url": file_url, "score": "n/a"})
+            elif img_match:
+                file_url = img_match.group(1)
+                log.info(f"[realb] post {post_id} image: {file_url}")
+                posts.append({"id": post_id, "file_url": file_url, "score": "n/a"})
+            else:
+                log.warning(f"[realb] could not extract file url for post {post_id}")
+                log.info(f"[realb] html snippet: {post_html[1000:1500]}")
+
+    log.info(f"[realb] returning {len(posts)} post(s)")
+    return posts
+
+
 async def fetch_nhentai_gallery(tags: str) -> dict | None:
-    # search for a random matching gallery and return full page data
     encoded = "%20".join(tags.strip().split())
     page = random.randint(1, 5)
     url = f"https://nhentai.net/search/?q={encoded}&page={page}"
     log.info(f"[nh] searching tags={tags!r} page={page}")
-    log.info(f"[nh] url: {url}")
-
     async with aiohttp.ClientSession() as session:
         async with session.get(url, headers=BROWSER_HEADERS) as resp:
             log.info(f"[nh] http {resp.status}")
             html = await resp.text()
-
     ids = list(dict.fromkeys(re.findall(r'href="/g/(\d+)/"', html)))
     log.info(f"[nh] found {len(ids)} gallery ids")
-
     if not ids:
         log.warning("[nh] no gallery ids found")
         return None
-
     gid = random.choice(ids)
     api_url = f"https://nhentai.net/api/gallery/{gid}"
-    log.info(f"[nh] fetching gallery {gid}")
-
     async with aiohttp.ClientSession() as session:
         async with session.get(api_url, headers=BROWSER_HEADERS) as resp:
             log.info(f"[nh] gallery {gid} http {resp.status}")
             raw = await resp.text()
-
     try:
         data = json.loads(raw)
     except Exception as e:
         log.error(f"[nh] gallery parse failed: {e}")
         return None
-
     media_id = data.get("media_id")
     pages = data.get("images", {}).get("pages", [])
     title = (data.get("title") or {}).get("english") or (data.get("title") or {}).get("pretty", "unknown")
-
     if not pages:
-        log.warning(f"[nh] no pages for gallery {gid}")
         return None
-
-    # fix link button url
-    return {
-        "id": gid,
-        "media_id": media_id,
-        "title": title,
-        "pages": pages,
-    }
+    return {"id": gid, "media_id": media_id, "title": title, "pages": pages}
 
 
 async def fetch_e621(tags: str, amount: int) -> list:
@@ -263,6 +308,7 @@ async def fetch_e621(tags: str, amount: int) -> list:
         async with session.get(url, headers=headers) as resp:
             log.info(f"[e621] http {resp.status}")
             raw = await resp.text()
+    log.info(f"[e621] raw (first 300): {raw[:300]}")
     try:
         data = json.loads(raw)
     except Exception as e:
@@ -315,6 +361,19 @@ def build_xbooru_embed(post: dict, tags: str):
     embed.set_footer(text=f"score: {post.get('score', 'n/a')} | id: {post.get('id')}")
     return embed, None
 
+def build_realbooru_embed(post: dict, tags: str):
+    file_url = post.get("file_url", "")
+    if file_url.endswith((".mp4", ".webm")):
+        return None, f"[{tags}] {file_url} (video)"
+    embed = discord.Embed(
+        title=f"realbooru / {tags}",
+        url=f"https://realbooru.com/index.php?page=post&s=view&id={post.get('id')}",
+        color=0xFF8800,
+    )
+    embed.set_image(url=file_url)
+    embed.set_footer(text=f"score: {post.get('score', 'n/a')} | id: {post.get('id')}")
+    return embed, None
+
 def build_e621_embed(post: dict, tags: str):
     file_url = (post.get("file") or {}).get("url")
     if not file_url:
@@ -362,10 +421,13 @@ async def send_results(interaction, posts, builder_fn, tags):
 
 # ── Slash commands ────────────────────────────────────────────────────────────
 
-@bot.tree.command(name="gel", description="fetch random posts from gelbooru")
+@bot.tree.command(name="gel", description="fetch random posts from gelbooru (nsfw channels only)")
 @app_commands.describe(tags='space-separated tags, e.g. "catgirl anime"', amount="number of posts 1-10 (default: 1)")
 @app_commands.checks.cooldown(1, 3)
 async def gel(interaction: discord.Interaction, tags: str, amount: app_commands.Range[int, 1, 10] = 1):
+    if not getattr(interaction.channel, "nsfw", False):
+        await interaction.response.send_message("this command can only be used in nsfw channels.", ephemeral=True)
+        return
     await interaction.response.defer()
     try:
         posts = await fetch_gelbooru(tags, amount)
@@ -374,10 +436,13 @@ async def gel(interaction: discord.Interaction, tags: str, amount: app_commands.
         log.exception(f"[gel] unhandled error: {e}")
         await interaction.followup.send("an error occurred. please try again.")
 
-@bot.tree.command(name="xb", description="fetch random posts from xbooru")
+@bot.tree.command(name="xb", description="fetch random posts from xbooru (nsfw channels only)")
 @app_commands.describe(tags='space-separated tags, e.g. "catgirl anime"', amount="number of posts 1-10 (default: 1)")
 @app_commands.checks.cooldown(1, 3)
 async def xb(interaction: discord.Interaction, tags: str, amount: app_commands.Range[int, 1, 10] = 1):
+    if not getattr(interaction.channel, "nsfw", False):
+        await interaction.response.send_message("this command can only be used in nsfw channels.", ephemeral=True)
+        return
     await interaction.response.defer()
     try:
         posts = await fetch_xbooru(tags, amount)
@@ -386,32 +451,48 @@ async def xb(interaction: discord.Interaction, tags: str, amount: app_commands.R
         log.exception(f"[xb] unhandled error: {e}")
         await interaction.followup.send("an error occurred. please try again.")
 
-@bot.tree.command(name="nh", description="read a random doujin from nhentai")
+@bot.tree.command(name="realbooru", description="fetch random posts from realbooru (nsfw channels only)")
+@app_commands.describe(tags='space-separated tags, e.g. "blonde"', amount="number of posts 1-10 (default: 1)")
+@app_commands.checks.cooldown(1, 5)
+async def realbooru(interaction: discord.Interaction, tags: str, amount: app_commands.Range[int, 1, 10] = 1):
+    if not getattr(interaction.channel, "nsfw", False):
+        await interaction.response.send_message("this command can only be used in nsfw channels.", ephemeral=True)
+        return
+    await interaction.response.defer()
+    try:
+        posts = await fetch_realbooru(tags, amount)
+        await send_results(interaction, posts, build_realbooru_embed, tags)
+    except Exception as e:
+        log.exception(f"[realb] unhandled error: {e}")
+        await interaction.followup.send("an error occurred. please try again.")
+
+@bot.tree.command(name="nh", description="read a random doujin from nhentai (nsfw channels only)")
 @app_commands.describe(tags='space-separated tags, e.g. "milf big breasts"')
 @app_commands.checks.cooldown(1, 5)
 async def nh(interaction: discord.Interaction, tags: str):
-    log.info(f"[nh] invoked by {interaction.user} | tags={tags!r}")
+    if not getattr(interaction.channel, "nsfw", False):
+        await interaction.response.send_message("this command can only be used in nsfw channels.", ephemeral=True)
+        return
     await interaction.response.defer()
     try:
         gallery = await fetch_nhentai_gallery(tags)
         if not gallery:
             await interaction.followup.send(f"no results for tags: `{tags}`. try different tags.")
             return
-        # patch the link button url now that we have the id
         view = ReaderView(gallery)
-        for item in view.children:
-            if isinstance(item, discord.ui.Button) and item.label == "🔗 open":
-                item.url = f"https://nhentai.net/g/{gallery['id']}/"
         embed = build_page_embed(gallery, 0)
         await interaction.followup.send(embed=embed, view=view)
     except Exception as e:
         log.exception(f"[nh] unhandled error: {e}")
         await interaction.followup.send("an error occurred. please try again.")
 
-@bot.tree.command(name="e621", description="fetch random posts from e621")
+@bot.tree.command(name="e621", description="fetch random posts from e621 (nsfw channels only)")
 @app_commands.describe(tags='space-separated tags, e.g. "dragon solo"', amount="number of posts 1-10 (default: 1)")
 @app_commands.checks.cooldown(1, 3)
 async def e621(interaction: discord.Interaction, tags: str, amount: app_commands.Range[int, 1, 10] = 1):
+    if not getattr(interaction.channel, "nsfw", False):
+        await interaction.response.send_message("this command can only be used in nsfw channels.", ephemeral=True)
+        return
     await interaction.response.defer()
     try:
         posts = await fetch_e621(tags, amount)
@@ -422,6 +503,7 @@ async def e621(interaction: discord.Interaction, tags: str, amount: app_commands
 
 @gel.error
 @xb.error
+@realbooru.error
 @nh.error
 @e621.error
 async def on_cooldown(interaction: discord.Interaction, error):
