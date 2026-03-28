@@ -27,11 +27,36 @@ GEL_USER_ID = os.environ["GEL_USER_ID"]
 
 # ── Keep-alive server ─────────────────────────────────────────────────────────
 
+import urllib.request
+
 class KeepAlive(BaseHTTPRequestHandler):
     def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"alive")
+        if self.path.startswith("/proxy?url="):
+            # image proxy for gelbooru hotlink bypass
+            import urllib.parse
+            url = urllib.parse.unquote(self.path[len("/proxy?url="):])
+            try:
+                req = urllib.request.Request(url, headers={
+                    "User-Agent": "Mozilla/5.0",
+                    "Referer": "https://gelbooru.com/"
+                })
+                with urllib.request.urlopen(req, timeout=10) as r:
+                    data = r.read()
+                    ctype = r.headers.get("Content-Type", "image/jpeg")
+                self.send_response(200)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+            except Exception as e:
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(str(e).encode())
+        else:
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"alive")
+
     def log_message(self, *args):
         pass
 
@@ -347,7 +372,9 @@ def build_gb_embed(post: dict, tags: str):
         return None, f"[{tags}] {file_url} (video)"
     score = post.get("score", "n/a")
     # gelbooru blocks hotlinking so send as plain link with embed suppressed
-    return None, f"**gb / {tags}** — score: {score} | id: {post_id}\n{file_url}"
+    render_url = os.environ.get("RENDER_EXTERNAL_URL", "")
+    proxy_url = f"{render_url}/proxy?url={file_url}" if render_url else file_url
+    return None, f"**gb / {tags}** — score: {score} | id: {post_id}\n{proxy_url}"
 
 def build_xbooru_embed(post: dict, tags: str):
     file_url = post.get("file_url", "")
