@@ -1,6 +1,7 @@
 import os
 import random
 import json
+import xml.etree.ElementTree as ET
 import aiohttp
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
@@ -53,58 +54,58 @@ bot = Bot()
 # ── Fetch helpers ─────────────────────────────────────────────────────────────
 
 async def fetch_r34(tags: str, amount: int) -> list:
-    encoded = "+".join(tags.strip().split())
-    pid = random.randint(0, 19)
-    url = (
-        f"https://rule34.xxx/index.php"
-        f"?page=dapi&s=post&q=index&json=1&limit=100&pid={pid}&tags={encoded}"
-    )
-    log.info(f"[r34] tags={tags!r} pid={pid} amount={amount}")
+    # paheal API returns XML with posts as <tag> elements
+    url_tags = "%20".join(tags.strip().split())
+    page = random.randint(1, 10)
+    url = f"https://rule34.paheal.net/api/danbooru/find_posts?tags={url_tags}&limit=100&page={page}"
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; DiscordBot/1.0)"}
+
+    log.info(f"[r34] tags={tags!r} page={page} amount={amount}")
     log.info(f"[r34] url: {url}")
 
     async with aiohttp.ClientSession() as session:
-        async with session.get(url, headers={"User-Agent": "Mozilla/5.0 (compatible; DiscordBot/1.0)", "Accept": "application/json"}) as resp:
+        async with session.get(url, headers=headers) as resp:
             log.info(f"[r34] http {resp.status} content-type={resp.content_type}")
             raw = await resp.text()
 
     log.info(f"[r34] raw response (first 300): {raw[:300]}")
 
-    try:
-        data = json.loads(raw)
-    except Exception as e:
-        log.error(f"[r34] json parse failed: {e}")
-        return []
+    def parse_paheal(xml_text):
+        try:
+            root = ET.fromstring(xml_text)
+        except Exception as e:
+            log.error(f"[r34] xml parse failed: {e}")
+            return []
+        posts = []
+        for tag in root.findall(".//tag"):
+            file_url = tag.get("file_url")
+            if file_url:
+                posts.append({
+                    "file_url": file_url,
+                    "id": tag.get("id", "?"),
+                    "score": tag.get("score", "n/a"),
+                })
+        return posts
 
-    if not isinstance(data, list):
-        log.warning(f"[r34] unexpected type {type(data)}: {str(data)[:200]}")
-        return []
+    posts = parse_paheal(raw)
+    log.info(f"[r34] got {len(posts)} posts on page={page}")
 
-    log.info(f"[r34] got {len(data)} posts on pid={pid}")
-
-    if not data:
-        log.info("[r34] empty page, retrying pid=0")
-        url0 = (
-            f"https://rule34.xxx/index.php"
-            f"?page=dapi&s=post&q=index&json=1&limit=100&pid=0&tags={encoded}"
-        )
-        log.info(f"[r34] fallback url: {url0}")
+    if not posts:
+        log.info("[r34] empty page, retrying page=1")
+        url1 = f"https://rule34.paheal.net/api/danbooru/find_posts?tags={url_tags}&limit=100&page=1"
         async with aiohttp.ClientSession() as session:
-            async with session.get(url0, headers={"User-Agent": "Mozilla/5.0 (compatible; DiscordBot/1.0)", "Accept": "application/json"}) as resp:
+            async with session.get(url1, headers=headers) as resp:
                 log.info(f"[r34] fallback http {resp.status}")
                 raw = await resp.text()
         log.info(f"[r34] fallback raw (first 300): {raw[:300]}")
-        try:
-            data = json.loads(raw)
-        except Exception as e:
-            log.error(f"[r34] fallback json parse failed: {e}")
-            return []
-        log.info(f"[r34] fallback got {len(data) if isinstance(data, list) else 'n/a'} posts")
+        posts = parse_paheal(raw)
+        log.info(f"[r34] fallback got {len(posts)} posts")
 
-    if not isinstance(data, list) or not data:
+    if not posts:
         log.warning("[r34] no posts found after fallback")
         return []
 
-    picked = random.sample(data, min(amount, len(data)))
+    picked = random.sample(posts, min(amount, len(posts)))
     log.info(f"[r34] returning {len(picked)} post(s)")
     return picked
 
@@ -113,11 +114,13 @@ async def fetch_e621(tags: str, amount: int) -> list:
     encoded = "+".join(tags.strip().split())
     page = random.randint(1, 20)
     url = f"https://e621.net/posts.json?tags={encoded}&limit=100&page={page}"
+    headers = {"User-Agent": "DiscordBot/1.0 (by anonymous)"}
+
     log.info(f"[e621] tags={tags!r} page={page} amount={amount}")
     log.info(f"[e621] url: {url}")
 
     async with aiohttp.ClientSession() as session:
-        async with session.get(url, headers={"User-Agent": "DiscordBot/1.0 (by anonymous)"}) as resp:
+        async with session.get(url, headers=headers) as resp:
             log.info(f"[e621] http {resp.status} content-type={resp.content_type}")
             raw = await resp.text()
 
@@ -136,7 +139,7 @@ async def fetch_e621(tags: str, amount: int) -> list:
         log.info("[e621] empty page, retrying page=1")
         url1 = f"https://e621.net/posts.json?tags={encoded}&limit=100&page=1"
         async with aiohttp.ClientSession() as session:
-            async with session.get(url1, headers={"User-Agent": "DiscordBot/1.0 (by anonymous)"}) as resp:
+            async with session.get(url1, headers=headers) as resp:
                 log.info(f"[e621] fallback http {resp.status}")
                 raw = await resp.text()
         log.info(f"[e621] fallback raw (first 300): {raw[:300]}")
@@ -165,7 +168,7 @@ def build_r34_embed(post: dict, tags: str):
         return None, f"[{tags}] {file_url} (video)"
     embed = discord.Embed(
         title=f"rule34 / {tags}",
-        url=f"https://rule34.xxx/index.php?page=post&s=view&id={post['id']}",
+        url=f"https://rule34.paheal.net/post/view/{post['id']}",
         color=0xFF4444,
     )
     embed.set_image(url=file_url)
