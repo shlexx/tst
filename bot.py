@@ -1,7 +1,6 @@
 import os
 import random
 import json
-import re
 import aiohttp
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
@@ -21,8 +20,6 @@ log = logging.getLogger("bot")
 TOKEN = os.environ["DISCORD_TOKEN"]
 CLIENT_ID = int(os.environ["CLIENT_ID"])
 PORT = int(os.environ.get("PORT", 3000))
-R34_USER_ID = os.environ["R34_USER_ID"]
-R34_PASS_HASH = os.environ["R34_PASS_HASH"]
 
 # ── Keep-alive server ─────────────────────────────────────────────────────────
 
@@ -55,96 +52,117 @@ bot = Bot()
 
 # ── Fetch helpers ─────────────────────────────────────────────────────────────
 
-# Shared headers that look like a real browser
-BROWSER_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/123.0.0.0 Safari/537.36"
-    ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.5",
-    "Referer": "https://rule34.xxx/",
-    "Cookie": f"user_id={R34_USER_ID}; pass_hash={R34_PASS_HASH}",
-}
+async def fetch_gelbooru(tags: str, amount: int) -> list:
+    encoded = "%20".join(tags.strip().split())
+    pid = random.randint(0, 19)
+    url = (
+        f"https://gelbooru.com/index.php?page=dapi&s=post&q=index"
+        f"&json=1&limit=100&pid={pid}&tags={encoded}"
+    )
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; DiscordBot/1.0)"}
 
-async def fetch_r34(tags: str, amount: int) -> list:
-    encoded = "+".join(tags.strip().split())
-    pid = random.randint(0, 10)
-
-    # Scrape the post listing page
-    url = f"https://rule34.xxx/index.php?page=post&s=list&tags={encoded}&pid={pid * 42}"
-    log.info(f"[r34] scraping | tags={tags!r} pid={pid} amount={amount}")
-    log.info(f"[r34] url: {url}")
+    log.info(f"[gel] tags={tags!r} pid={pid} amount={amount}")
+    log.info(f"[gel] url: {url}")
 
     async with aiohttp.ClientSession() as session:
-        async with session.get(url, headers=BROWSER_HEADERS) as resp:
-            log.info(f"[r34] http {resp.status} content-type={resp.content_type}")
-            html = await resp.text()
+        async with session.get(url, headers=headers) as resp:
+            log.info(f"[gel] http {resp.status} content-type={resp.content_type}")
+            raw = await resp.text()
 
-    log.info(f"[r34] html length: {len(html)} | first 300: {html[:300]}")
+    log.info(f"[gel] raw response (first 300): {raw[:300]}")
 
-    # Extract post IDs from thumbnail links: href="index.php?page=post&s=view&id=XXXXXX"
-    post_ids = re.findall(r'page=post&amp;s=view&amp;id=(\d+)', html)
-    post_ids = list(dict.fromkeys(post_ids))  # deduplicate, preserve order
-    log.info(f"[r34] found {len(post_ids)} post ids on pid={pid}")
-
-    if not post_ids:
-        log.info("[r34] empty page, retrying pid=0")
-        url0 = f"https://rule34.xxx/index.php?page=post&s=list&tags={encoded}&pid=0"
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url0, headers=BROWSER_HEADERS) as resp:
-                log.info(f"[r34] fallback http {resp.status}")
-                html = await resp.text()
-        post_ids = re.findall(r'page=post&amp;s=view&amp;id=(\d+)', html)
-        post_ids = list(dict.fromkeys(post_ids))
-        log.info(f"[r34] fallback found {len(post_ids)} post ids")
-
-    if not post_ids:
-        log.warning("[r34] no post ids found after fallback")
+    try:
+        data = json.loads(raw)
+    except Exception as e:
+        log.error(f"[gel] json parse failed: {e}")
         return []
 
-    # Pick random subset of IDs, then fetch each post page for the image URL
-    chosen_ids = random.sample(post_ids, min(amount, len(post_ids)))
-    log.info(f"[r34] fetching details for ids: {chosen_ids}")
+    posts = data.get("post", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+    log.info(f"[gel] got {len(posts)} posts on pid={pid}")
 
-    posts = []
+    if not posts:
+        log.info("[gel] empty page, retrying pid=0")
+        url0 = (
+            f"https://gelbooru.com/index.php?page=dapi&s=post&q=index"
+            f"&json=1&limit=100&pid=0&tags={encoded}"
+        )
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url0, headers=headers) as resp:
+                log.info(f"[gel] fallback http {resp.status}")
+                raw = await resp.text()
+        log.info(f"[gel] fallback raw (first 300): {raw[:300]}")
+        try:
+            data = json.loads(raw)
+            posts = data.get("post", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+        except Exception as e:
+            log.error(f"[gel] fallback json parse failed: {e}")
+            return []
+        log.info(f"[gel] fallback got {len(posts)} posts")
+
+    if not posts:
+        log.warning("[gel] no posts found after fallback")
+        return []
+
+    picked = random.sample(posts, min(amount, len(posts)))
+    log.info(f"[gel] returning {len(picked)} post(s)")
+    return picked
+
+
+
+async def fetch_realbooru(tags: str, amount: int) -> list:
+    encoded = "%20".join(tags.strip().split())
+    pid = random.randint(0, 19)
+    url = (
+        f"https://realbooru.com/index.php?page=dapi&s=post&q=index"
+        f"&json=1&limit=100&pid={pid}&tags={encoded}"
+    )
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; DiscordBot/1.0)"}
+
+    log.info(f"[realb] tags={tags!r} pid={pid} amount={amount}")
+    log.info(f"[realb] url: {url}")
+
     async with aiohttp.ClientSession() as session:
-        for post_id in chosen_ids:
-            post_url = f"https://rule34.xxx/index.php?page=post&s=view&id={post_id}"
-            log.info(f"[r34] fetching post {post_id}: {post_url}")
-            async with session.get(post_url, headers=BROWSER_HEADERS) as resp:
-                log.info(f"[r34] post {post_id} http {resp.status}")
-                post_html = await resp.text()
+        async with session.get(url, headers=headers) as resp:
+            log.info(f"[realb] http {resp.status} content-type={resp.content_type}")
+            raw = await resp.text()
 
-            # Try to extract the image URL from the post page
-            # <img ... id="image" src="https://...rule34.xxx/...jpg" ...>
-            img_match = re.search(r'id=["\']image["\'][^>]*src=["\']([^"\']+)["\']', post_html)
-            if not img_match:
-                img_match = re.search(r'src=["\']([^"\']+)["\'][^>]*id=["\']image["\']', post_html)
+    log.info(f"[realb] raw response (first 300): {raw[:300]}")
 
-            # Also try video tag
-            vid_match = re.search(r'<source[^>]+src=["\']([^"\']+\.(?:mp4|webm))["\']', post_html)
+    try:
+        data = json.loads(raw)
+    except Exception as e:
+        log.error(f"[realb] json parse failed: {e}")
+        return []
 
-            # Extract score
-            score_match = re.search(r'id=["\']psc(\d+)["\']', post_html)
-            score = score_match.group(1) if score_match else "n/a"
+    posts = data.get("post", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+    log.info(f"[realb] got {len(posts)} posts on pid={pid}")
 
-            if vid_match:
-                file_url = vid_match.group(1)
-                log.info(f"[r34] post {post_id} video: {file_url}")
-                posts.append({"id": post_id, "file_url": file_url, "score": score})
-            elif img_match:
-                file_url = img_match.group(1)
-                log.info(f"[r34] post {post_id} image: {file_url}")
-                posts.append({"id": post_id, "file_url": file_url, "score": score})
-            else:
-                log.warning(f"[r34] could not extract file url for post {post_id}")
-                log.info(f"[r34] post html snippet: {post_html[1000:1500]}")
+    if not posts:
+        log.info("[realb] empty page, retrying pid=0")
+        url0 = (
+            f"https://realbooru.com/index.php?page=dapi&s=post&q=index"
+            f"&json=1&limit=100&pid=0&tags={encoded}"
+        )
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url0, headers=headers) as resp:
+                log.info(f"[realb] fallback http {resp.status}")
+                raw = await resp.text()
+        log.info(f"[realb] fallback raw (first 300): {raw[:300]}")
+        try:
+            data = json.loads(raw)
+            posts = data.get("post", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+        except Exception as e:
+            log.error(f"[realb] fallback json parse failed: {e}")
+            return []
+        log.info(f"[realb] fallback got {len(posts)} posts")
 
-    log.info(f"[r34] returning {len(posts)} post(s)")
-    return posts
+    if not posts:
+        log.warning("[realb] no posts found after fallback")
+        return []
 
+    picked = random.sample(posts, min(amount, len(posts)))
+    log.info(f"[realb] returning {len(picked)} post(s)")
+    return picked
 
 async def fetch_e621(tags: str, amount: int) -> list:
     encoded = "+".join(tags.strip().split())
@@ -197,18 +215,32 @@ async def fetch_e621(tags: str, amount: int) -> list:
 
 # ── Embed builders ────────────────────────────────────────────────────────────
 
-def build_r34_embed(post: dict, tags: str):
+def build_gel_embed(post: dict, tags: str):
     file_url = post.get("file_url", "")
-    log.info(f"[r34] building embed id={post.get('id')} url={file_url}")
+    log.info(f"[gel] building embed id={post.get('id')} url={file_url}")
     if file_url.endswith((".mp4", ".webm")):
         return None, f"[{tags}] {file_url} (video)"
     embed = discord.Embed(
-        title=f"rule34 / {tags}",
-        url=f"https://rule34.xxx/index.php?page=post&s=view&id={post['id']}",
+        title=f"gelbooru / {tags}",
+        url=f"https://gelbooru.com/index.php?page=post&s=view&id={post.get('id')}",
         color=0xFF4444,
     )
     embed.set_image(url=file_url)
-    embed.set_footer(text=f"score: {post.get('score', 'n/a')} | id: {post['id']}")
+    embed.set_footer(text=f"score: {post.get('score', 'n/a')} | id: {post.get('id')}")
+    return embed, None
+
+def build_realbooru_embed(post: dict, tags: str):
+    file_url = post.get("file_url", "")
+    log.info(f"[realb] building embed id={post.get('id')} url={file_url}")
+    if file_url.endswith((".mp4", ".webm")):
+        return None, f"[{tags}] {file_url} (video)"
+    embed = discord.Embed(
+        title=f"realbooru / {tags}",
+        url=f"https://realbooru.com/index.php?page=post&s=view&id={post.get('id')}",
+        color=0xFF8800,
+    )
+    embed.set_image(url=file_url)
+    embed.set_footer(text=f"score: {post.get('score', 'n/a')} | id: {post.get('id')}")
     return embed, None
 
 def build_e621_embed(post: dict, tags: str):
@@ -263,17 +295,30 @@ async def send_results(interaction, posts, builder_fn, tags):
 
 # ── Slash commands ────────────────────────────────────────────────────────────
 
-@bot.tree.command(name="r34", description="fetch random posts from rule34")
+@bot.tree.command(name="gel", description="fetch random posts from gelbooru")
 @app_commands.describe(tags='space-separated tags, e.g. "catgirl anime"', amount="number of posts 1-10 (default: 1)")
-@app_commands.checks.cooldown(1, 5)
-async def r34(interaction: discord.Interaction, tags: str, amount: app_commands.Range[int, 1, 10] = 1):
-    log.info(f"[r34] invoked by {interaction.user} | tags={tags!r} amount={amount}")
+@app_commands.checks.cooldown(1, 3)
+async def gel(interaction: discord.Interaction, tags: str, amount: app_commands.Range[int, 1, 10] = 1):
+    log.info(f"[gel] invoked by {interaction.user} | tags={tags!r} amount={amount}")
     await interaction.response.defer()
     try:
-        posts = await fetch_r34(tags, amount)
-        await send_results(interaction, posts, build_r34_embed, tags)
+        posts = await fetch_gelbooru(tags, amount)
+        await send_results(interaction, posts, build_gel_embed, tags)
     except Exception as e:
-        log.exception(f"[r34] unhandled error: {e}")
+        log.exception(f"[gel] unhandled error: {e}")
+        await interaction.followup.send("an error occurred. please try again.")
+
+@bot.tree.command(name="real", description="fetch random posts from realbooru")
+@app_commands.describe(tags='space-separated tags, e.g. "blonde woman"', amount="number of posts 1-10 (default: 1)")
+@app_commands.checks.cooldown(1, 3)
+async def realbooru(interaction: discord.Interaction, tags: str, amount: app_commands.Range[int, 1, 10] = 1):
+    log.info(f"[realb] invoked by {interaction.user} | tags={tags!r} amount={amount}")
+    await interaction.response.defer()
+    try:
+        posts = await fetch_realbooru(tags, amount)
+        await send_results(interaction, posts, build_realbooru_embed, tags)
+    except Exception as e:
+        log.exception(f"[realb] unhandled error: {e}")
         await interaction.followup.send("an error occurred. please try again.")
 
 @bot.tree.command(name="e621", description="fetch random posts from e621")
@@ -289,7 +334,8 @@ async def e621(interaction: discord.Interaction, tags: str, amount: app_commands
         log.exception(f"[e621] unhandled error: {e}")
         await interaction.followup.send("an error occurred. please try again.")
 
-@r34.error
+@gel.error
+@realbooru.error
 @e621.error
 async def on_cooldown(interaction: discord.Interaction, error):
     if isinstance(error, app_commands.CommandOnCooldown):
