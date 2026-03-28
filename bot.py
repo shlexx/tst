@@ -347,7 +347,7 @@ def build_gb_embed(post: dict, tags: str):
         return None, f"[{tags}] {file_url} (video)"
     score = post.get("score", "n/a")
     # gelbooru blocks hotlinking so send as plain link with embed suppressed
-    return None, f"**gb / {tags}** — score: {score} | id: {post_id}\n{file_url}\n<https://gelbooru.com/index.php?page=post&s=view&id={post_id}>"
+    return None, f"**gb / {tags}** — score: {score} | id: {post_id}\n{file_url}"
 
 def build_xbooru_embed(post: dict, tags: str):
     file_url = post.get("file_url", "")
