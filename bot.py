@@ -142,57 +142,44 @@ def extract_file_url(html: str):
 # ── Fetch helpers ─────────────────────────────────────────────────────────────
 
 async def fetch_gb(tags: str, amount: int) -> list:
-    encoded = "+".join(tags.strip().split())
-    pid = random.randint(0, 10)
-    url = f"https://gelbooru.com/index.php?page=post&s=list&tags={encoded}&pid={pid * 42}"
-    log.info(f"[gb] scraping tags={tags!r} pid={pid} amount={amount}")
-    log.info(f"[gb] url: {url}")
-
+    encoded = "%20".join(tags.strip().split())
+    pid = random.randint(0, 19)
+    url = (
+        f"https://gelbooru.com/index.php?page=dapi&s=post&q=index"
+        f"&json=1&limit=100&pid={pid}&tags={encoded}"
+        f"&api_key={GEL_API_KEY}&user_id={GEL_USER_ID}"
+    )
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; DiscordBot/1.0)"}
+    log.info(f"[gb] tags={tags!r} pid={pid} amount={amount}")
     async with aiohttp.ClientSession() as session:
-        async with session.get(url, headers=BROWSER_HEADERS) as resp:
-            log.info(f"[gb] http {resp.status} content-type={resp.content_type}")
-            html = await resp.text()
-
-    log.info(f"[gb] html length={len(html)}")
-    log.info(f"[gb] middle chunk: {html[5000:6000]}")
-
-    post_ids = list(dict.fromkeys(re.findall(r'page=post&amp;s=view&amp;id=(\d+)', html)))
-    log.info(f"[gb] found {len(post_ids)} post ids")
-
-    if not post_ids:
-        log.info("[gb] retrying pid=0")
-        url0 = f"https://gelbooru.com/index.php?page=post&s=list&tags={encoded}&pid=0"
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url0, headers=BROWSER_HEADERS) as resp:
-                log.info(f"[gb] fallback http {resp.status}")
-                html = await resp.text()
-        post_ids = list(dict.fromkeys(re.findall(r'page=post&amp;s=view&amp;id=(\d+)', html)))
-        log.info(f"[gb] fallback found {len(post_ids)} post ids")
-
-    if not post_ids:
-        log.warning("[gb] no post ids found")
+        async with session.get(url, headers=headers) as resp:
+            log.info(f"[gb] http {resp.status}")
+            raw = await resp.text()
+    log.info(f"[gb] raw (first 300): {raw[:300]}")
+    try:
+        data = json.loads(raw)
+    except Exception as e:
+        log.error(f"[gb] json parse failed: {e}")
         return []
-
-    chosen = random.sample(post_ids, min(amount, len(post_ids)))
-    posts = []
-
-    async with aiohttp.ClientSession() as session:
-        for post_id in chosen:
-            post_url = f"https://gelbooru.com/index.php?page=post&s=view&id={post_id}"
-            async with session.get(post_url, headers=BROWSER_HEADERS) as resp:
-                log.info(f"[gb] post {post_id} http {resp.status}")
-                post_html = await resp.text()
-
-            file_url, is_video = extract_file_url(post_html)
-            if file_url:
-                posts.append({"id": post_id, "file_url": file_url, "is_video": is_video, "score": "n/a"})
-                log.info(f"[gb] post {post_id} {'video' if is_video else 'image'}: {file_url}")
-            else:
-                log.warning(f"[gb] could not extract file url for post {post_id}")
-                log.info(f"[gb] html snippet: {post_html[1000:1500]}")
-
-    log.info(f"[gb] returning {len(posts)} post(s)")
-    return posts
+    posts = data.get("post", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+    if not posts:
+        url0 = (
+            f"https://gelbooru.com/index.php?page=dapi&s=post&q=index"
+            f"&json=1&limit=100&pid=0&tags={encoded}"
+            f"&api_key={GEL_API_KEY}&user_id={GEL_USER_ID}"
+        )
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url0, headers=headers) as resp:
+                raw = await resp.text()
+        try:
+            data = json.loads(raw)
+            posts = data.get("post", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+        except:
+            return []
+    if not posts:
+        log.warning("[gb] no posts found")
+        return []
+    return random.sample(posts, min(amount, len(posts)))
 
 
 async def fetch_xbooru(tags: str, amount: int) -> list:
@@ -335,19 +322,20 @@ async def fetch_e621(tags: str, amount: int) -> list:
 # ── Embed builders ────────────────────────────────────────────────────────────
 
 def build_gb_embed(post: dict, tags: str):
+    post_id = post.get("id")
     file_url = post.get("file_url", "")
     if not file_url:
+        image = post.get("image", "")
+        directory = post.get("directory", "")
+        if image and directory:
+            file_url = f"https://img2.gelbooru.com/images/{directory}/{image}"
+    if not file_url:
         return None, None
-    if post.get("is_video") or file_url.endswith((".mp4", ".webm")):
+    if file_url.endswith((".mp4", ".webm")):
         return "video", file_url
-    embed = discord.Embed(
-        title=f"gb / {tags}",
-        url=f"https://gelbooru.com/index.php?page=post&s=view&id={post.get('id')}",
-        color=0xFF4444,
-    )
-    embed.set_image(url=file_url)
-    embed.set_footer(text=f"score: {post.get('score', 'n/a')} | id: {post.get('id')}")
-    return "embed", embed
+    score = post.get("score", "n/a")
+    # send as plain link - Discord will embed the image directly
+    return "link", f"**gb / {tags}** — score: {score} | id: {post_id}\n{file_url}"
 
 def build_xbooru_embed(post: dict, tags: str):
     file_url = post.get("file_url", "")
@@ -406,7 +394,7 @@ async def send_results(interaction, posts, builder_fn, tags):
     if not posts:
         await interaction.followup.send(f"no results for tags: `{tags}`. try different tags.")
         return
-    embeds, video_urls = [], []
+    embeds, video_urls, link_msgs = [], [], []
     for post in posts:
         result = builder_fn(post, tags)
         if not result or result[0] is None:
@@ -416,12 +404,16 @@ async def send_results(interaction, posts, builder_fn, tags):
             embeds.append(value)
         elif kind == "video":
             video_urls.append(value)
-    if not embeds and not video_urls:
+        elif kind == "link":
+            link_msgs.append(value)
+    if not embeds and not video_urls and not link_msgs:
         await interaction.followup.send("could not build any embeds for those posts.")
         return
     if embeds:
         for i in range(0, len(embeds), 10):
             await interaction.followup.send(embeds=embeds[i:i + 10])
+    for link in link_msgs:
+        await interaction.followup.send(link)
     for url in video_urls:
         log.info(f"sending video: {url}")
         await interaction.followup.send(f"|| {url} ||")
