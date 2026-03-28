@@ -21,6 +21,8 @@ log = logging.getLogger("bot")
 TOKEN = os.environ["DISCORD_TOKEN"]
 CLIENT_ID = int(os.environ["CLIENT_ID"])
 PORT = int(os.environ.get("PORT", 3000))
+R34_USER_ID = os.environ["R34_USER_ID"]
+R34_PASS_HASH = os.environ["R34_PASS_HASH"]
 
 # ── Keep-alive server ─────────────────────────────────────────────────────────
 
@@ -63,6 +65,7 @@ BROWSER_HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.5",
     "Referer": "https://rule34.xxx/",
+    "Cookie": f"user_id={R34_USER_ID}; pass_hash={R34_PASS_HASH}",
 }
 
 async def fetch_r34(tags: str, amount: int) -> list:
