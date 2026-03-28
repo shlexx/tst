@@ -333,26 +333,21 @@ async def fetch_e621(tags: str, amount: int) -> list:
 # ── Embed builders ────────────────────────────────────────────────────────────
 
 def build_gb_embed(post: dict, tags: str):
+    post_id = post.get("id")
     file_url = post.get("file_url", "")
     if not file_url:
         image = post.get("image", "")
         directory = post.get("directory", "")
         if image and directory:
-            # try multiple CDN subdomains
-            file_url = f"https://img3.gelbooru.com/images/{directory}/{image}"
-    log.info(f"[gb] constructed url: {file_url!r}")
+            file_url = f"https://img2.gelbooru.com/images/{directory}/{image}"
+    log.info(f"[gb] file_url: {file_url!r}")
     if not file_url:
         return None, None
     if file_url.endswith((".mp4", ".webm")):
         return None, f"[{tags}] {file_url} (video)"
-    embed = discord.Embed(
-        title=f"gb / {tags}",
-        url=f"https://gelbooru.com/index.php?page=post&s=view&id={post.get('id')}",
-        color=0xFF4444,
-    )
-    embed.set_image(url=file_url)
-    embed.set_footer(text=f"score: {post.get('score', 'n/a')} | id: {post.get('id')}")
-    return embed, None
+    score = post.get("score", "n/a")
+    # gelbooru blocks hotlinking so send as plain link with embed suppressed
+    return None, f"**gb / {tags}** — score: {score} | id: {post_id}\n{file_url}\n<https://gelbooru.com/index.php?page=post&s=view&id={post_id}>"
 
 def build_xbooru_embed(post: dict, tags: str):
     file_url = post.get("file_url", "")
