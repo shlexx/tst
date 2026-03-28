@@ -398,7 +398,7 @@ async def nh(interaction: discord.Interaction, tags: str):
             await interaction.followup.send(f"no results for tags: `{tags}`. try different tags.")
             return
         # patch the link button url now that we have the id
-        view = ReaderView(gallery)H
+        view = ReaderView(gallery)
         for item in view.children:
             if isinstance(item, discord.ui.Button) and item.label == "🔗 open":
                 item.url = f"https://nhentai.net/g/{gallery['id']}/"
