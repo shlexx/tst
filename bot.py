@@ -421,13 +421,10 @@ async def send_results(interaction, posts, builder_fn, tags):
 
 # ── Slash commands ────────────────────────────────────────────────────────────
 
-@bot.tree.command(name="gel", description="fetch random posts from gelbooru (nsfw channels only)")
+@bot.tree.command(name="gel", description="fetch random posts from gelbooru")
 @app_commands.describe(tags='space-separated tags, e.g. "catgirl anime"', amount="number of posts 1-10 (default: 1)")
 @app_commands.checks.cooldown(1, 3)
 async def gel(interaction: discord.Interaction, tags: str, amount: app_commands.Range[int, 1, 10] = 1):
-    if not getattr(interaction.channel, "nsfw", False):
-        await interaction.response.send_message("this command can only be used in nsfw channels.", ephemeral=True)
-        return
     await interaction.response.defer()
     try:
         posts = await fetch_gelbooru(tags, amount)
@@ -436,13 +433,10 @@ async def gel(interaction: discord.Interaction, tags: str, amount: app_commands.
         log.exception(f"[gel] unhandled error: {e}")
         await interaction.followup.send("an error occurred. please try again.")
 
-@bot.tree.command(name="xb", description="fetch random posts from xbooru (nsfw channels only)")
+@bot.tree.command(name="xb", description="fetch random posts from xbooru")
 @app_commands.describe(tags='space-separated tags, e.g. "catgirl anime"', amount="number of posts 1-10 (default: 1)")
 @app_commands.checks.cooldown(1, 3)
 async def xb(interaction: discord.Interaction, tags: str, amount: app_commands.Range[int, 1, 10] = 1):
-    if not getattr(interaction.channel, "nsfw", False):
-        await interaction.response.send_message("this command can only be used in nsfw channels.", ephemeral=True)
-        return
     await interaction.response.defer()
     try:
         posts = await fetch_xbooru(tags, amount)
@@ -451,13 +445,10 @@ async def xb(interaction: discord.Interaction, tags: str, amount: app_commands.R
         log.exception(f"[xb] unhandled error: {e}")
         await interaction.followup.send("an error occurred. please try again.")
 
-@bot.tree.command(name="realbooru", description="fetch random posts from realbooru (nsfw channels only)")
+@bot.tree.command(name="rb", description="fetch random posts from realbooru")
 @app_commands.describe(tags='space-separated tags, e.g. "blonde"', amount="number of posts 1-10 (default: 1)")
 @app_commands.checks.cooldown(1, 5)
 async def realbooru(interaction: discord.Interaction, tags: str, amount: app_commands.Range[int, 1, 10] = 1):
-    if not getattr(interaction.channel, "nsfw", False):
-        await interaction.response.send_message("this command can only be used in nsfw channels.", ephemeral=True)
-        return
     await interaction.response.defer()
     try:
         posts = await fetch_realbooru(tags, amount)
@@ -466,13 +457,10 @@ async def realbooru(interaction: discord.Interaction, tags: str, amount: app_com
         log.exception(f"[realb] unhandled error: {e}")
         await interaction.followup.send("an error occurred. please try again.")
 
-@bot.tree.command(name="nh", description="read a random doujin from nhentai (nsfw channels only)")
+@bot.tree.command(name="nh", description="read a random doujin from nhentai")
 @app_commands.describe(tags='space-separated tags, e.g. "milf big breasts"')
 @app_commands.checks.cooldown(1, 5)
 async def nh(interaction: discord.Interaction, tags: str):
-    if not getattr(interaction.channel, "nsfw", False):
-        await interaction.response.send_message("this command can only be used in nsfw channels.", ephemeral=True)
-        return
     await interaction.response.defer()
     try:
         gallery = await fetch_nhentai_gallery(tags)
@@ -486,13 +474,10 @@ async def nh(interaction: discord.Interaction, tags: str):
         log.exception(f"[nh] unhandled error: {e}")
         await interaction.followup.send("an error occurred. please try again.")
 
-@bot.tree.command(name="e621", description="fetch random posts from e621 (nsfw channels only)")
+@bot.tree.command(name="e621", description="fetch random posts from e621")
 @app_commands.describe(tags='space-separated tags, e.g. "dragon solo"', amount="number of posts 1-10 (default: 1)")
 @app_commands.checks.cooldown(1, 3)
 async def e621(interaction: discord.Interaction, tags: str, amount: app_commands.Range[int, 1, 10] = 1):
-    if not getattr(interaction.channel, "nsfw", False):
-        await interaction.response.send_message("this command can only be used in nsfw channels.", ephemeral=True)
-        return
     await interaction.response.defer()
     try:
         posts = await fetch_e621(tags, amount)
