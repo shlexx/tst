@@ -430,7 +430,7 @@ async def send_results(interaction, posts, builder_fn, tags):
 
 # ── Slash commands ────────────────────────────────────────────────────────────
 
-@bot.tree.command(name="gel", description="fetch random posts from gelbooru")
+@bot.tree.command(name="gb", description="fetch random posts from gelbooru")
 @app_commands.describe(tags='space-separated tags, e.g. "catgirl anime"', amount="number of posts 1-10 (default: 1)")
 @app_commands.checks.cooldown(1, 3)
 async def gel(interaction: discord.Interaction, tags: str, amount: app_commands.Range[int, 1, 10] = 1):
@@ -457,7 +457,7 @@ async def xb(interaction: discord.Interaction, tags: str, amount: app_commands.R
 @bot.tree.command(name="rb", description="fetch random posts from realbooru")
 @app_commands.describe(tags='space-separated tags, e.g. "blonde"', amount="number of posts 1-10 (default: 1)")
 @app_commands.checks.cooldown(1, 5)
-async def realbooru(interaction: discord.Interaction, tags: str, amount: app_commands.Range[int, 1, 10] = 1):
+async def rb(interaction: discord.Interaction, tags: str, amount: app_commands.Range[int, 1, 10] = 1):
     await interaction.response.defer()
     try:
         posts = await fetch_realbooru(tags, amount)
@@ -497,7 +497,7 @@ async def e621(interaction: discord.Interaction, tags: str, amount: app_commands
 
 @gel.error
 @xb.error
-@realbooru.error
+@rb.error
 @nh.error
 @e621.error
 async def on_cooldown(interaction: discord.Interaction, error):
