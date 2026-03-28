@@ -434,9 +434,6 @@ async def send_results(interaction, posts, builder_fn, tags):
 @app_commands.describe(tags='space-separated tags, e.g. "catgirl anime"', amount="number of posts 1-10 (default: 1)")
 @app_commands.checks.cooldown(1, 3)
 async def gb(interaction: discord.Interaction, tags: str, amount: app_commands.Range[int, 1, 10] = 1):
-    if not getattr(interaction.channel, "nsfw", False):
-        await interaction.response.send_message("this command can only be used in nsfw channels.", ephemeral=True)
-        return
     await interaction.response.defer()
     try:
         posts = await fetch_gelbooru(tags, amount)
@@ -449,9 +446,6 @@ async def gb(interaction: discord.Interaction, tags: str, amount: app_commands.R
 @app_commands.describe(tags='space-separated tags, e.g. "catgirl anime"', amount="number of posts 1-10 (default: 1)")
 @app_commands.checks.cooldown(1, 3)
 async def xb(interaction: discord.Interaction, tags: str, amount: app_commands.Range[int, 1, 10] = 1):
-    if not getattr(interaction.channel, "nsfw", False):
-        await interaction.response.send_message("this command can only be used in nsfw channels.", ephemeral=True)
-        return
     await interaction.response.defer()
     try:
         posts = await fetch_xbooru(tags, amount)
