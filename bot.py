@@ -153,7 +153,7 @@ async def fetch_gb(tags: str, amount: int) -> list:
             log.info(f"[gb] http {resp.status} content-type={resp.content_type}")
             html = await resp.text()
 
-    log.info(f"[gb] html length={len(html)} first 300: {html[:300]}")
+    log.info(f"[gb] html length={len(html)} first 800: {html[:800]}")
 
     post_ids = list(dict.fromkeys(re.findall(r'page=post&amp;s=view&amp;id=(\d+)', html)))
     log.info(f"[gb] found {len(post_ids)} post ids")
