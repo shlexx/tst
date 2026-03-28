@@ -336,7 +336,7 @@ def build_gel_embed(post: dict, tags: str):
     file_url = post.get("file_url", "")
     if not file_url:
         image = post.get("image", "")
-        directory = str(post.get("directory", "")).replace("\\", "/").replace("\", "/")
+        directory = post.get("directory", "")
         if image and directory:
             file_url = f"https://img3.gelbooru.com/images/{directory}/{image}"
     if not file_url:
@@ -434,6 +434,9 @@ async def send_results(interaction, posts, builder_fn, tags):
 @app_commands.describe(tags='space-separated tags, e.g. "catgirl anime"', amount="number of posts 1-10 (default: 1)")
 @app_commands.checks.cooldown(1, 3)
 async def gb(interaction: discord.Interaction, tags: str, amount: app_commands.Range[int, 1, 10] = 1):
+    if not getattr(interaction.channel, "nsfw", False):
+        await interaction.response.send_message("this command can only be used in nsfw channels.", ephemeral=True)
+        return
     await interaction.response.defer()
     try:
         posts = await fetch_gelbooru(tags, amount)
