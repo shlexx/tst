@@ -336,7 +336,7 @@ def build_gel_embed(post: dict, tags: str):
     file_url = post.get("file_url", "")
     if not file_url:
         image = post.get("image", "")
-        directory = post.get("directory", "")
+        directory = str(post.get("directory", "")).replace("\\", "/").replace("\", "/")
         if image and directory:
             file_url = f"https://img3.gelbooru.com/images/{directory}/{image}"
     if not file_url:
@@ -433,7 +433,10 @@ async def send_results(interaction, posts, builder_fn, tags):
 @bot.tree.command(name="gb", description="fetch random posts from gelbooru")
 @app_commands.describe(tags='space-separated tags, e.g. "catgirl anime"', amount="number of posts 1-10 (default: 1)")
 @app_commands.checks.cooldown(1, 3)
-async def gel(interaction: discord.Interaction, tags: str, amount: app_commands.Range[int, 1, 10] = 1):
+async def gb(interaction: discord.Interaction, tags: str, amount: app_commands.Range[int, 1, 10] = 1):
+    if not getattr(interaction.channel, "nsfw", False):
+        await interaction.response.send_message("this command can only be used in nsfw channels.", ephemeral=True)
+        return
     await interaction.response.defer()
     try:
         posts = await fetch_gelbooru(tags, amount)
@@ -446,6 +449,9 @@ async def gel(interaction: discord.Interaction, tags: str, amount: app_commands.
 @app_commands.describe(tags='space-separated tags, e.g. "catgirl anime"', amount="number of posts 1-10 (default: 1)")
 @app_commands.checks.cooldown(1, 3)
 async def xb(interaction: discord.Interaction, tags: str, amount: app_commands.Range[int, 1, 10] = 1):
+    if not getattr(interaction.channel, "nsfw", False):
+        await interaction.response.send_message("this command can only be used in nsfw channels.", ephemeral=True)
+        return
     await interaction.response.defer()
     try:
         posts = await fetch_xbooru(tags, amount)
@@ -495,7 +501,7 @@ async def e621(interaction: discord.Interaction, tags: str, amount: app_commands
         log.exception(f"[e621] unhandled error: {e}")
         await interaction.followup.send("an error occurred. please try again.")
 
-@gel.error
+@gb.error
 @xb.error
 @rb.error
 @nh.error
