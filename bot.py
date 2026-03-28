@@ -369,7 +369,7 @@ def build_gb_embed(post: dict, tags: str):
     if not file_url:
         return None, None
     if file_url.endswith((".mp4", ".webm")):
-        return None, f"<{file_url}>"
+        return "video", file_url
     score = post.get("score", "n/a")
     # gelbooru blocks hotlinking so send as plain link with embed suppressed
     render_url = os.environ.get("RENDER_EXTERNAL_URL", "")
@@ -381,9 +381,9 @@ def build_gb_embed(post: dict, tags: str):
     )
     embed.set_image(url=proxy_url)
     embed.set_footer(text=f"score: {score} | id: {post_id}")
-    return embed, None
+    return "embed", embed
     if file_url.endswith((".mp4", ".webm")):
-        return None, f"<{file_url}>"
+        return "video", file_url
     embed = discord.Embed(
         title=f"xbooru / {tags}",
         url=f"https://xbooru.com/index.php?page=post&s=view&id={post.get('id')}",
@@ -391,12 +391,12 @@ def build_gb_embed(post: dict, tags: str):
     )
     embed.set_image(url=file_url)
     embed.set_footer(text=f"score: {post.get('score', 'n/a')} | id: {post.get('id')}")
-    return embed, None
+    return "embed", embed
 
 def build_rb_embed(post: dict, tags: str):
     file_url = post.get("file_url", "")
     if file_url.endswith((".mp4", ".webm")):
-        return None, f"<{file_url}>"
+        return "video", file_url
     embed = discord.Embed(
         title=f"rb / {tags}",
         url=f"https://realbooru.com/index.php?page=post&s=view&id={post.get('id')}",
@@ -404,14 +404,14 @@ def build_rb_embed(post: dict, tags: str):
     )
     embed.set_image(url=file_url)
     embed.set_footer(text=f"score: {post.get('score', 'n/a')} | id: {post.get('id')}")
-    return embed, None
+    return "embed", embed
 
 def build_e621_embed(post: dict, tags: str):
     file_url = (post.get("file") or {}).get("url")
     if not file_url:
         return None, None
     if file_url.endswith((".mp4", ".webm")):
-        return None, f"<{file_url}>"
+        return "video", file_url
     score = (post.get("score") or {}).get("total", "n/a")
     embed = discord.Embed(
         title=f"e621 / {tags}",
@@ -420,36 +420,55 @@ def build_e621_embed(post: dict, tags: str):
     )
     embed.set_image(url=file_url)
     embed.set_footer(text=f"score: {score} | id: {post['id']}")
-    return embed, None
+    return "embed", embed
 
 # ── Send results ──────────────────────────────────────────────────────────────
+
+async def download_video(url: str) -> discord.File | None:
+    headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://gelbooru.com/"}
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers) as resp:
+                if resp.status != 200:
+                    log.warning(f"video download failed: http {resp.status}")
+                    return None
+                data = await resp.read()
+                ext = url.split(".")[-1].split("?")[0]
+                return discord.File(fp=__import__("io").BytesIO(data), filename=f"video.{ext}")
+    except Exception as e:
+        log.error(f"video download error: {e}")
+        return None
 
 async def send_results(interaction, posts, builder_fn, tags):
     if not posts:
         await interaction.followup.send(f"no results for tags: `{tags}`. try different tags.")
         return
-    embeds, video_links = [], []
+    embeds, video_urls = [], []
     for post in posts:
         result = builder_fn(post, tags)
         if not result:
             continue
-        embed, video = result
-        if embed:
-            embeds.append(embed)
-        if video:
-            video_links.append(video)
-    if not embeds and not video_links:
+        kind, value = result
+        if kind == "embed":
+            embeds.append(value)
+        elif kind == "video":
+            video_urls.append(value)
+    if not embeds and not video_urls:
         await interaction.followup.send("could not build any embeds for those posts.")
         return
-    first = True
-    for i in range(0, max(len(embeds), 1), 10):
-        chunk = embeds[i:i + 10]
-        content = "\n".join(video_links) if (first and video_links) else None
-        if first:
-            await interaction.followup.send(content=content, embeds=chunk)
-            first = False
-        else:
+    # send embeds in chunks of 10
+    if embeds:
+        for i in range(0, len(embeds), 10):
+            chunk = embeds[i:i + 10]
             await interaction.followup.send(embeds=chunk)
+    # download and send videos as attachments
+    for url in video_urls:
+        log.info(f"downloading video: {url}")
+        file = await download_video(url)
+        if file:
+            await interaction.followup.send(file=file)
+        else:
+            await interaction.followup.send(f"<{url}>")
 
 # ── Slash commands ────────────────────────────────────────────────────────────
 
