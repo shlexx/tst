@@ -369,7 +369,7 @@ def build_gb_embed(post: dict, tags: str):
     if not file_url:
         return None, None
     if file_url.endswith((".mp4", ".webm")):
-        return None, f"{file_url}"
+        return None, f"<{file_url}>"
     score = post.get("score", "n/a")
     # gelbooru blocks hotlinking so send as plain link with embed suppressed
     render_url = os.environ.get("RENDER_EXTERNAL_URL", "")
@@ -383,7 +383,7 @@ def build_gb_embed(post: dict, tags: str):
     embed.set_footer(text=f"score: {score} | id: {post_id}")
     return embed, None
     if file_url.endswith((".mp4", ".webm")):
-        return None, f"{file_url}"
+        return None, f"<{file_url}>"
     embed = discord.Embed(
         title=f"xbooru / {tags}",
         url=f"https://xbooru.com/index.php?page=post&s=view&id={post.get('id')}",
@@ -396,7 +396,7 @@ def build_gb_embed(post: dict, tags: str):
 def build_rb_embed(post: dict, tags: str):
     file_url = post.get("file_url", "")
     if file_url.endswith((".mp4", ".webm")):
-        return None, f"{file_url}"
+        return None, f"<{file_url}>"
     embed = discord.Embed(
         title=f"rb / {tags}",
         url=f"https://realbooru.com/index.php?page=post&s=view&id={post.get('id')}",
@@ -411,7 +411,7 @@ def build_e621_embed(post: dict, tags: str):
     if not file_url:
         return None, None
     if file_url.endswith((".mp4", ".webm")):
-        return None, f"{file_url}"
+        return None, f"<{file_url}>"
     score = (post.get("score") or {}).get("total", "n/a")
     embed = discord.Embed(
         title=f"e621 / {tags}",
