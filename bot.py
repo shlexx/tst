@@ -90,7 +90,11 @@ class ReaderView(View):
         self.total = len(gallery["pages"])
         self.update_buttons()
         # set link button url
-        self.open_btn.url = f"https://nhentai.net/g/{gallery['id']}/"
+        self.add_item(discord.ui.Button(
+            label="🔗 open",
+            style=discord.ButtonStyle.link,
+            url=f"https://nhentai.net/g/{gallery['id']}/"
+        ))
 
     def update_buttons(self):
         self.prev_btn.disabled = self.page == 0
@@ -112,9 +116,7 @@ class ReaderView(View):
             embed=build_page_embed(self.gallery, self.page), view=self
         )
 
-    @discord.ui.button(label="🔗 open", style=discord.ButtonStyle.link)
-    async def open_btn(self, interaction: discord.Interaction, button: Button):
-        pass
+
 
     async def on_timeout(self):
         for item in self.children:
@@ -332,6 +334,13 @@ async def fetch_e621(tags: str, amount: int) -> list:
 
 def build_gel_embed(post: dict, tags: str):
     file_url = post.get("file_url", "")
+    if not file_url:
+        image = post.get("image", "")
+        directory = post.get("directory", "")
+        if image and directory:
+            file_url = f"https://img3.gelbooru.com/images/{directory}/{image}"
+    if not file_url:
+        return None, None
     if file_url.endswith((".mp4", ".webm")):
         return None, f"[{tags}] {file_url} (video)"
     embed = discord.Embed(
